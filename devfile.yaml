@@ -1,3 +1,77 @@
 apiVersion: 1.0.0
 metadata:
-  name: minimal-workspace
+  name: scrapehero-dev-environment
+projects:
+  - name: scrapehero
+    source:
+      type: git
+      location: 'https://github.com/UTx10101/scrapehero.git'
+components:
+  - alias: theia-editor
+    type: cheEditor
+    id: eclipse/che-theia/next
+  - type: dockerimage
+    alias: nodejs
+    # system limit for number of file watchers reached with
+    # image: registry.access.redhat.com/ubi8/nodejs-10
+    image: quay.io/eclipse/che-nodejs8-centos:nightly
+    memoryLimit: 512Mi
+    endpoints:
+      - name: 'nodejs'
+        port: 3000
+    mountSources: true
+  - type: chePlugin
+    id: golang/go/latest
+    alias: go-plugin
+    memoryLimit: 512Mi
+    preferences:
+      go.lintTool: 'golangci-lint'
+      go.lintFlags: '--fast'
+      go.useLanguageServer: true
+  - type: dockerimage
+    # this version is used in the plugin
+    image: quay.io/eclipse/che-golang-1.14:nightly
+    alias: go-cli
+    env:
+      - name: GOPATH
+        # replicate the GOPATH from the plugin
+        value: $(CHE_PROJECTS_ROOT)/go
+      - name: GOCACHE
+        # replicate the GOCACHE from the plugin, even though the cache is not shared
+        # between the two
+        value: /tmp/.cache
+    endpoints:
+      - name: '8080-tcp'
+        port: 8080
+    memoryLimit: 2Gi
+    mountSources: true
+commands:
+  - name: install deps
+    actions:
+      - type: exec
+        component: nodejs
+        command: npm install
+        workdir: ${CHE_PROJECTS_ROOT}/scrapehero/web
+  - name: start local server
+    actions:
+      - type: exec
+        component: nodejs
+        command: npm run serve
+        workdir: ${CHE_PROJECTS_ROOT}/scrapehero/web
+  - name: 'Debug current file'
+    actions:
+      - type: vscode-launch
+        referenceContent: |
+          {
+            "version": "0.2.0",
+            "configurations": [
+              {
+                "name": "Debug current file",
+                "type": "go",
+                "request": "launch",
+                "mode": "auto",
+                "program": "${fileDirname}"
+              }
+            ]
+          }
+  
