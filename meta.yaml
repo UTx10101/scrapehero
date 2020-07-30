@@ -1,0 +1,5 @@
+displayName: Scrapehero
+description: Golang + VueJs
+tags: ["Go", "Vuejs", "Nodejs"]
+icon: /images/go.svg
+globalMemoryLimit: 1686Mi
