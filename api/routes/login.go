@@ -1,95 +1,52 @@
 package routes
 
 import (
+	// builtin
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
+	// self
 	"github.com/github.com/UTx10101/scrapehero/api/auth"
 	"github.com/github.com/UTx10101/scrapehero/api/models"
-	"github.com/github.com/UTx10101/scrapehero/api/security"
-	"github.com/github.com/UTx10101/scrapehero/api/utils"
-	"golang.org/x/crypto/bcrypt"
+	
+	// vendored
+	"github.com/gin-gonic/gin"
+	"github.com/pkg/errors"
 	"github.com/spf13/viper"
 )
 
-func Login(c *gin.Context) {
-
-	//clear previous error if any
-	errList = map[string]string{}
-
-	body, err := ioutil.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{
-			"status":      http.StatusUnprocessableEntity,
-			"first error": "Unable to get request",
-		})
-		return
-	}
-	user := models.User{}
-	err = json.Unmarshal(body, &user)
-	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{
-			"status": http.StatusUnprocessableEntity,
-			"error":  "Cannot unmarshal body",
-		})
-		return
-	}
-	user.Prepare()
-	errorMessages := user.Validate()
-	if len(errorMessages) > 0 {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{
-			"status": http.StatusUnprocessableEntity,
-			"error":  errorMessages,
-		})
-		return
-	}
-	userData, err := SignIn(user.Username, user.Password)
-	if err != nil {
-		formattedError := utils.FormatError(err.Error())
-		c.JSON(http.StatusUnprocessableEntity, gin.H{
-			"status": http.StatusUnprocessableEntity,
-			"error":  formattedError,
-		})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"status":   http.StatusOK,
-		"response": userData,
-	})
+type UserData struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
-func SignIn(username, password string) (map[string]interface{}, error) {
+func Login(c *gin.Context) {
 
-	var err error
-
-	userData := make(map[string]interface{})
+	var reqData UserRequestData
+	if err := c.ShouldBindJSON(&reqData); err != nil {
+		HandleError(http.StatusUnauthorized, c, errors.New("not authorized"))
+		return
+	}
 
 	user := models.User{
 		"Username": viper.GetString("api.username"),
 		"Password": viper.GetString("api.password"),
 		"Email": viper.GetString("api.email")
 	}
-	
-	if username == user.Username {
-		err = errors.New("error getting the user: user not found")
-		return nil, err
+	if reqData.Username != user.Username || reqData.Password != user.Password {
+		HandleError(http.StatusUnauthorized, c, errors.New("not authorized"))
+		return
 	}
-	
-	if password == user.Password {
-		err = errors.New("error checking the password: incorrect password")
-		return nil, err
+
+	if tokenStr, err := token, err := auth.CreateToken(user.Username, 0, "AUTH"); err != nil {
+		HandleError(http.StatusUnauthorized, c, errors.New("not authorized"))
+		return
 	}
-	token, err := auth.CreateToken(user.Username, 0, "AUTH")
-	if err != nil {
-		return nil, err
-	}
-	userData["token"] = token
-	userData["username"] = user.Username
-	userData["email"] = user.Email
-	
-	return userData, nil
+
+	c.JSON(http.StatusOK, Response{
+		Status:  "ok",
+		Message: "success",
+		Data:    tokenStr,
+	})
 }

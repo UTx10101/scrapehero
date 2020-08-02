@@ -69,24 +69,22 @@ func main() {
 		{
 			authGroup.GET("/projects", routes.GetProjects)
 			authGroup.GET("/projects/:pid", routes.GetProject)
+			authGroup.GET("/projects/:pid/editor/:action", routes.EditProject)
 			authGroup.PUT("/projects", routes.CreateProject)
-			authGroup.POST("/projects/:id", routes.ModProject)
-			authGroup.DELETE("/projects/:id", routes.DeleteProject)
-			authGroup.GET("/projects/:pid/tasks", routes.GetProjectTasks)
-			authGroup.PUT("/projects/:pid/tasks", routes.CreateProject)
-			authGroup.POST("/projects/:pid/tasks/:id", routes.ModProjectTask)
-			authGroup.DELETE("/projects/:pid/tasks/:id", routes.DeleteProjectTask)
+			authGroup.POST("/projects/:pid", routes.ModProject)
+			authGroup.DELETE("/projects/:pid", routes.DeleteProject)
 		}
 		{
 			authGroup.GET("/apikeys", routes.GetAPIKeys)
 			authGroup.PUT("/apikeys", routes.CreateAPIKey)
+			authGroup.POST("/apikeys/:kid/:status", routes.ModAPIKeyStatus)
 			authGroup.DELETE("/apikeys/:kid", routes.DeleteAPIKey)
 		}
 	}
 	apiGroup := app.Group("/", middlewares.APIAuthMiddleware())
 	{
 		{
-			apiGroup.GET("/projects/:pid/data/:limit/:offset", routes.GetProjectData)
+			apiGroup.POST("/projects/:pid/data", routes.GetProjectData)
 		}
 	}
 

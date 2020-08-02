@@ -3,27 +3,48 @@ package middlewares
 import (
 	// builtin
 	"net/http"
+	"strings"
 	
 	// self
 	"github.com/UTx10101/scrapehero/api/auth"
+	"github.com/UTx10101/scrapehero/api/routes"
+	"github.com/UTx10101/scrapehero/api/models"
 
 	// vendored
 	"github.com/gin-gonic/gin"
+	"github.com/spf13/viper"
 )
 
 func AuthMiddleware() gin.HandlerFunc {
-	errList := make(map[string]string)
 	return func(c *gin.Context) {
-		err := auth.TokenValid(c.Request)
-		if err != nil {
-			errList["unauthorized"] = "Unauthorized"
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"status": http.StatusUnauthorized,
-				"error":  errList,
+		tokenStr := c.GetHeader("Authorization")
+
+		if user, _, err := auth.ValidateToken(tokenStr); err != nil || user != viper.GetString("api.username") {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, routes.Response{
+				Status:  "ok",
+				Message: "unauthorized",
+				Error:   "unauthorized",
 			})
-			c.Abort()
 			return
 		}
+
+		c.Next()
+	}
+}
+
+func APIAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tokenStr := c.GetHeader("Authorization")
+
+		if err := models.CheckAPIKey(tokenStr); err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, routes.Response{
+				Status:  "ok",
+				Message: "unauthorized",
+				Error:   err.Error(),
+			})
+			return
+		}
+
 		c.Next()
 	}
 }

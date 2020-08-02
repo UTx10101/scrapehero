@@ -1,181 +1,150 @@
-package model
+package routes
 
 import (
 	// builtin
-	"context"
-	"runtime/debug"
-	"time"
+	"net/http"
+	"options"
 	
-	// vendored
+	// self
 	"github.com/UTx10101/scrapehero/constants"
 	"github.com/UTx10101/scrapehero/db"
-	"github.com/apex/log"
-	"github.com/globalsign/mgo/bson"
+	"github.com/UTx10101/scrapeher/models"
 	
+	// vendored
+	"github.com/gin-gonic/gin"
+	"github.com/globalsign/mgo/bson"
 )
 
-type Project struct {
-	ID          bson.ObjectId `json:"_id" bson:"_id"`
-	Name        string        `json:"name" bson:"name"` 
-	CreateTs time.Time     `json:"create_ts" bson:"create_ts"`
-	UpdateTs time.Time     `json:"update_ts" bson:"update_ts"`
+func GetProjects(c *gin.Context) {
+	query := bson.M{}
+	
+	if projects, err := models.GetProjects(query); err != nil {
+		HandleError(http.StatusInternalServerError, c, err)
+		return
+	}
+
+	if total, err := models.GetProjectsCount(query); err != nil {
+		HandleError(http.StatusInternalServerError, c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, ListResponse{
+		Status:  "ok",
+		Message: "success",
+		Data:    projects,
+		Total:   total,
+	})
 }
 
-func (p *Project) Update() error {	
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	err := db.DBClient.Connect(ctx)
-	if err != nil {
-		log.Fatal(err)
+func GetProject(c *gin.Context) {
+	pid := c.Param("pid")
+	
+	if !bson.IsObjectIdHex(pid) {
+		HandleErrorF(http.StatusBadRequest, c, "invalid project id")
+		return
 	}
 	
-	defer db.DBClient.Disconnect(ctx)
-	
-	col := db.DBClient.Database("scphero").Collection("projects")
-	
-	p.UpdateTs = time.Now()
-	
-	filter := 
-	
-	if res, err := col.UpdateOne(ctx, bson.D{{"_id", p.ID}}, p); err != nil {
-		log.Fatal(err)
-		debug.PrintStack()
-		return err
+	if project, err := models.GetProject(bson.ObjectIdHex(pid)); err != nil {
+		HandleError(http.StatusInternalServerError, c, err)
+		return
 	}
 
-	fmt.Printf("Updated %v projects.\n", res.ModifiedCount)
-
-	return nil
+	c.JSON(http.StatusOK, Response{
+		Status:  "ok",
+		Message: "success",
+		Data:    project,
+	})
 }
 
-func (p *Project) Create() error {
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	err := db.DBClient.Connect(ctx)
-	if err != nil {
-		log.Fatal(err)
+func EditProject(c *gin.Context) {
+	pid := c.Param("pid")
+	action := c.Param("action")
+	
+	if !bson.IsObjectIdHex(pid) {
+		HandleErrorF(http.StatusBadRequest, c, "invalid project id")
+		return
 	}
 	
-	defer db.DBClient.Disconnect(ctx)
-	
-	col := db.DBClient.Database("scphero").Collection("projects")
-	
-	p.ID = bson.NewObjectId()
-	p.UpdateTs = time.Now()
-	p.CreateTs = time.Now()
-	
-	if res, err := col.InsertOne(ctx, p); err != nil {
-		log.Fatal(err)
-		debug.PrintStack()
-		return err
+	if action == "1" {
+		if err := utils.StartEditor(); err != nil {
+			HandleError(http.StatusInternalServerError, c, err)
+			return
+		}
+	} else if action == "0" {
+		if err := utils.StopEditor(); err != nil {
+			HandleError(http.StatusInternalServerError, c, err)
+			return
+		}
+	} else {
+		HandleErrorF(http.StatusBadRequest, c, "invalid editor action")
+		return
 	}
 	
-	fmt.Println("Project Created: ", res.InsertedID)
-
-	return nil
+	c.JSON(http.StatusOK, Response{
+		Status:  "ok",
+		Message: "success",
+	})
 }
 
-func GetProject(id bson.ObjectId) (Project, error) {
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	err := db.DBClient.Connect(ctx)
-	if err != nil {
-		log.Fatal(err)
+func CreateProject(c *gin.Context) {
+	var p models.Project
+	
+	if err := c.ShouldBindJSON(&p); err != nil {
+		HandleError(http.StatusBadRequest, c, err)
+		return
 	}
 	
-	defer db.DBClient.Disconnect(ctx)
-	
-	col := db.DBClient.Database("scphero").Collection("projects")
-	
-	var p Project
-	
-	if err := col.FindOne(ctx, bson.D{{"_id", id}}).Decode(&&p); err != nil {
-		log.Fatal(err)
-		debug.PrintStack()
-		return p, err
+	if err := p.Create(); err != nil {
+		HandleError(http.StatusInternalServerError, c, err)
+		return
 	}
-	return p, nil
+
+	c.JSON(http.StatusOK, Response{
+		Status:  "ok",
+		Message: "success",
+	})
 }
 
-func GetProjects(filter interface{}, sortKey string) ([]Project, error) {
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	err := db.DBClient.Connect(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-	
-	defer db.DBClient.Disconnect(ctx)
-	
-	col := db.DBClient.Database("scphero").Collection("projects")
+func ModProject(c *gin.Context) {
+	pid := c.Param("pid")
 
-	var projects []Project
-	
-	if err := col.Find(filter).Sort(sortKey).All(&projects); err != nil {
-		debug.PrintStack()
-		return projects, err
+	if !bson.IsObjectIdHex(pid) {
+		HandleErrorF(http.StatusBadRequest, c, "invalid project id")
+		return
 	}
 
-	return projects, nil
+	var prj models.Project
+	if err := c.ShouldBindJSON(&prj); err != nil {
+		HandleError(http.StatusBadRequest, c, err)
+		return
+	}
+
+	if err := models.UpdateProject(bson.ObjectIdHex(pid), prj); err != nil {
+		HandleError(http.StatusInternalServerError, c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, Response{
+		Status:  "ok",
+		Message: "success",
+	})
 }
 
-func GetProjectsCount(filter interface{}) (int, error) {
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	err := db.DBClient.Connect(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-	
-	defer db.DBClient.Disconnect(ctx)
-	
-	col := db.DBClient.Database("scphero").Collection("projects")
+func DeleteProject(c *gin.Context) {
+	pid := c.Param("pid")
 
-	count, err := c.Find(filter).Count()
-	if err != nil {
-		return 0, err
+	if !bson.IsObjectIdHex(pid) {
+		HandleErrorF(http.StatusBadRequest, c, "invalid project id")
+		return
 	}
 
-	return count, nil
-}
-
-func UpdateProject(id bson.ObjectId, item Project) error {
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	err := db.DBClient.Connect(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-	
-	defer db.DBClient.Disconnect(ctx)
-	
-	col := db.DBClient.Database("scphero").Collection("projects")
-
-	var res Project
-	if err := col.FindOne(ctx, bson.M{"_id": id}).Decode(&res); err != nil {
-		debug.PrintStack()
-		return err
+	if err := models.RemoveProject(bson.ObjectIdHex(pid)); err != nil {
+		HandleError(http.StatusInternalServerError, c, err)
+		return
 	}
 
-	if err := item.Update(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func RemoveProject(id bson.ObjectId) error {
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	err := db.DBClient.Connect(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-	
-	defer db.DBClient.Disconnect(ctx)
-	
-	col := db.DBClient.Database("scphero").Collection("projects")
-
-	var result User
-	if err := c.FindId(id).One(&result); err != nil {
-		return err
-	}
-
-	if err := c.RemoveId(id); err != nil {
-		return err
-	}
-
-	return nil
+	c.JSON(http.StatusOK, Response{
+		Status:  "ok",
+		Message: "success",
+	})
 }
